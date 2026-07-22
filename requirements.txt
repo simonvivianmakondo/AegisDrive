@@ -1,0 +1,6 @@
+numpy>=1.24
+opencv-python>=4.8
+# Optionnel (détecteur réel) — décommente quand tu veux YOLO :
+# ultralytics>=8.2
+# Dev :
+# pytest>=8.0

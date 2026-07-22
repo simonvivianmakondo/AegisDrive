@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+*.mp4
+!tests/**/*.mp4
+*.jsonl
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+*.pt
+*.onnx
+*.engine
+
+# Sorties générées (analyses locales)
+frame_extracted/
+report.json
+report.txt
+report.png
+output*.mp4
+models/

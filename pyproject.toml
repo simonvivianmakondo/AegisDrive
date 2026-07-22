@@ -1,0 +1,20 @@
+[project]
+name = "aegisdrive"
+version = "0.1.0"
+description = "Plateforme de perception embarquée (ADAS) — analyse vidéo de scène routière"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "opencv-python>=4.8"]
+
+[project.optional-dependencies]
+yolo = ["ultralytics>=8.2"]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+aegisdrive = "aegisdrive.main:main"
