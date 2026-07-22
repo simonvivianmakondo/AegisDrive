@@ -19,3 +19,11 @@ report.txt
 report.png
 output*.mp4
 models/
+
+# Environnement CARLA dédié + sorties d'évaluation/capture (locales)
+.venv-carla/
+*.log
+eval*.json
+report_*.json
+report_*.txt
+recordings/
