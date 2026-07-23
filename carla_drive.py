@@ -42,6 +42,8 @@ def main() -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=2000)
     ap.add_argument("--output", default="recordings/drive.mp4")
+    ap.add_argument("--show", action="store_true",
+                    help="fenêtre LIVE : boîtes, voies, danger, HUD pilote (Échap pour quitter)")
     args = ap.parse_args()
 
     w = args.proc_width
@@ -105,6 +107,13 @@ def main() -> int:
         cv2.putText(frame.image, txt, (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                     (0, 255, 255), 1, cv2.LINE_AA)
 
+        # Affichage LIVE (même rendu que la vidéo : boîtes, voies, panneau, HUD).
+        if args.show:
+            from aegisdrive.viz.annotator import draw_overlay
+            cv2.imshow("AegisDrive - pilote autonome", draw_overlay(frame.image.copy(), world))
+            if (cv2.waitKey(1) & 0xFF) == 27:          # Échap
+                break
+
         sink.consume(frame, world)
         ego.apply_control(control)
 
@@ -123,6 +132,8 @@ def main() -> int:
                   flush=True)
 
     sink.close()
+    if args.show:
+        cv2.destroyAllWindows()
     avg = sum(speeds) / len(speeds) if speeds else 0.0
     print("\n==================== BILAN PILOTE AUTONOME ====================")
     print(f"  distance parcourue : {dist_driven:.0f} m")
