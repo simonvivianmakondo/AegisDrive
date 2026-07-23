@@ -75,15 +75,51 @@ Sans YOLO installé, le pipeline tourne avec un **`FakeDetector`** (utile pour l
 
 ---
 
+## 🕹️ Mode simulateur (CARLA)
+
+La **même perception** peut analyser un monde 3D vivant au lieu d'une vidéo figée, via le
+simulateur **[CARLA](https://carla.org/) 0.10** (Unreal Engine 5). On remplace simplement
+la source : `--source carla`. Le reste du pipeline (détection → tracking → risque) est
+**inchangé**.
+
+```bash
+# 1) lancer le serveur CARLA (fenêtre 3D)
+CarlaUnreal.exe -carla-rpc-port=2000
+
+# 2) faire tourner AegisDrive sur le simulateur (YOLO + voies carte)
+python -m aegisdrive.main --source carla --detector yolo --carla-frames 700 --output out.mp4
+```
+
+Points clés de l'intégration :
+
+- **`CarlaSource`** — une caméra virtuelle embarquée exposée via l'interface `Source`
+  (mode synchrone → déterministe), + la **vérité terrain** du simulateur (positions
+  réelles, projetées dans l'image) pour *valider* la perception.
+- **`CarlaLaneProvider`** — les voies sont lues dans la **carte HD** du simulateur
+  (waypoints), pas détectées à l'image : sur le rendu synthétique de CARLA les réseaux de
+  voies (entraînés sur du réel) échouent. Résultat : corridor + lignes exacts, assignation
+  de voie ~90 %, et infos de conduite (virage, voies adjacentes, changement autorisé).
+- **Outils d'évaluation** : `carla_eval.py` (perception vs vérité terrain — détection,
+  distance, TTC), `carla_calib.py` (calibration distance en scénario contrôlé — **biais
+  < 5 %**), `carla_reset.py` (remise à zéro du serveur), `hello_carla.py` (test de
+  connexion).
+
+> ⚠️ La lib native CARLA plante à l'extinction de Python (mode synchrone) : les scripts
+> terminent par `os._exit()` + un reset serveur dans un process séparé. Détail dans
+> `io/carla_source.py`.
+
+---
+
 ## ⚙️ Options principales (CLI)
 
 | Option | Défaut | Rôle |
 |---|---|---|
-| `--input` | — | Vidéo d'entrée (`.mp4`) **(requis)** |
+| `--source` | `video` | Source des frames : `video` (mp4) \| `carla` (simulateur) |
+| `--input` | — | Vidéo d'entrée (`.mp4`) — **requis si `--source video`** |
 | `--output` | `output.mp4` | Vidéo annotée de sortie |
 | `--detector` | `fake` | `fake` \| `yolo` |
 | `--tracker` | `kalman` | `kalman` \| `iou` |
-| `--road` | `classic` | Voies : `classic` (Hough) \| `seg` (segmentation YOLOPv2) |
+| `--road` | `classic` | Voies : `classic` (Hough) \| `seg` (YOLOPv2) \| `carla` (waypoints — défaut auto en `--source carla`) |
 | `--lanes-model` | `auto` | Lignes : `auto` \| `classic` \| `ufld` (réseau dédié) |
 | `--fov` | `60` | Champ de vision horizontal caméra (°) — sert au calcul de distance |
 | `--cam-height` | `1.2` | Hauteur caméra (m) — échelle de la vitesse ego |
@@ -92,7 +128,11 @@ Sans YOLO installé, le pipeline tourne avec un **`FakeDetector`** (utile pour l
 | `--start` / `--end` | `0` / fin | Analyser seulement un segment (secondes) |
 | `--report` / `--no-report` | `report.json` | Rapport de fin (JSON + `.txt`) |
 
-Exemple ciblé : `--input drive.mp4 --detector yolo --road seg --start 50 --end 90`
+**Options CARLA** (avec `--source carla`) : `--carla-frames` (nb de frames), `--carla-traffic`
+(véhicules PNJ), `--carla-town` (carte), `--carla-seed` (varie la route), `--carla-host`/`--carla-port`.
+
+Exemples : `--input drive.mp4 --detector yolo --road seg --start 50 --end 90`
+· `--source carla --detector yolo --carla-frames 1400 --carla-seed 2`
 
 ---
 
@@ -125,9 +165,10 @@ Comportements observés : hard_braking, lane_change, overtaking,
 | 3 | TTC + score de danger explicable | ✅ |
 | 4 | Voies (UFLD / YOLOPv2) + ego-motion + comportements | ✅ |
 | 5 | Rapport de synthèse (relit le log JSONL) | ✅ |
-| 6 | Profondeur mono (Depth Anything) + vue BEV | 🔜 |
-| 7 | Multi-cam, optim GPU (TensorRT sur modules profilés) | 🔜 |
-| 8 | Temps réel passif embarqué (Jetson) | 🔜 |
+| 6 | **Intégration CARLA** : source simulateur + voies carte + validation vs vérité terrain | ✅ |
+| 7 | Profondeur mono (Depth Anything) + vue BEV | 🔜 |
+| 8 | Contrôle en boucle fermée (suivi de voie, virages, freinage) puis agent RL | 🔜 |
+| 9 | Multi-cam, optim GPU (TensorRT), temps réel passif embarqué (Jetson) | 🔜 |
 
 ---
 
@@ -137,19 +178,23 @@ Comportements observés : hard_braking, lane_change, overtaking,
 src/aegisdrive/
   schemas.py        contrats de données (source de vérité)
   interfaces.py     Protocols : Source, Detector, Tracker, RiskEngine, Sink
-  io/               lecture/écriture vidéo (OpenCV)
+  io/               sources/sinks : vidéo (OpenCV) + CARLA (carla_source.py)
   perception/       détecteurs (fake, yolo)
   tracking/         suivi (IoU simple, Kalman)
   estimation/       cinématique (distance, vitesse)
   ego/              estimation du mouvement propre (ego-motion)
-  scene/            voies & route (Hough, YOLOPv2, UFLD)
+  scene/            voies & route (Hough, YOLOPv2, UFLD, carla_lanes.py)
   understanding/    états d'objets & moteur de comportements
   risk/             moteur de règles explicable (TTC, danger)
   preprocess/       conditions de scène (jour/nuit/météo)
   analytics/        rapport de fin (JSON + texte)
   viz/              annotation des frames + dashboard
   pipeline/         orchestrateur (mode vidéo ; temps réel plus tard)
-  main.py           input.mp4 → output.mp4 + log + rapport
+  main.py           input.mp4 / CARLA → output.mp4 + log + rapport
+hello_carla.py      test de connexion CARLA (caméra + vérité terrain)
+carla_eval.py       évaluation perception vs vérité terrain CARLA
+carla_calib.py      calibration distance (scénario contrôlé)
+carla_reset.py      remise à zéro du serveur CARLA
 tests/              tests unitaires (tournent sans GPU ni modèle)
 ```
 
