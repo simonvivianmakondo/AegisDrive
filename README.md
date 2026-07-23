@@ -13,8 +13,10 @@
   <img src="https://img.shields.io/badge/statut-en%20développement-orange?style=for-the-badge"/>
 </p>
 
-> ⚠️ **Le système observe et analyse. Il ne pilote jamais le véhicule.**
-> AegisDrive est un outil de **perception passive** (analyse hors-ligne et, à terme, temps réel embarqué), pas un système de contrôle.
+> ⚠️ **Sur un véhicule réel, le système observe et analyse — il ne pilote jamais.**
+> AegisDrive est un outil de **perception passive** (analyse hors-ligne et, à terme, temps réel embarqué).
+> Le **pilotage autonome existe uniquement en simulation** (CARLA), à des fins de recherche : voir
+> [Pilote autonome](#-pilote-autonome-en-simulation-étape-c).
 
 ---
 
@@ -30,6 +32,8 @@
 - 🚦 **Analyse de comportements** — freinage d'urgence, changement de voie, dépassement, *cut-in*, piéton traversant…
 - 🌗 **Conditions de scène** — jour/nuit/météo, avec rehaussement optionnel de l'image
 - 📊 **Dashboard** intégré (panneau latéral) + **rapport** de fin (`.json` + `.txt`)
+- 🕹️ **Mode simulateur (CARLA)** — la même perception tourne dans un monde 3D vivant, validée
+  contre la **vérité terrain**, et peut même **piloter le véhicule** (voir plus bas)
 
 ---
 
@@ -110,6 +114,39 @@ Points clés de l'intégration :
 
 ---
 
+## 🚗 Pilote autonome (en simulation) — étape C
+
+En boucle fermée, AegisDrive **conduit** l'ego dans CARLA (autopilot du simulateur coupé) :
+
+```bash
+python carla_drive.py --frames 800 --seed 3 --traffic 30 --output recordings/drive.mp4
+```
+
+**Architecture — fusion de capteurs, comme les vraies voitures autonomes :**
+
+```
+ caméra + YOLO   ──▶ QUOI  : véhicules, piétons, feux (perception AegisDrive)
+ radar virtuel   ──▶ COMBIEN : distance/TTC exacts (acteurs + capteur d'obstacle CARLA)
+ carte waypoints ──▶ OÙ ALLER : axe de voie, virage, voies adjacentes
+                        │
+                        ▼
+                   Controller  ──▶  throttle / brake / steer
+```
+
+**Trois couches :**
+1. **Suivi de voie + freinage** — contrôleur de **Stanley** (corrige *cap* **et** *écart latéral*) + régulation type ACC.
+2. **Virages** — au carrefour, choix de la branche qui continue la route.
+3. **Changements de voie** — si un lent bloque et qu'une voie adjacente est libre et autorisée.
+
+**Résultat mesuré** (seed 3, 800 frames) : **174 m parcourus, 0 collision**, 15.6 km/h de moyenne
+(pointe 27.8), écart mini au véhicule devant 4.8 m, **écart latéral max 0.72 m** sur une voie de 3.5 m.
+
+> 💡 La distance qui **pilote** vient du radar virtuel, pas de la vision : la distance monoculaire
+> est juste en moyenne mais imprécise objet par objet (±15 %). C'est exactement la raison d'être
+> de la fusion caméra + radar/LiDAR sur les vraies voitures.
+
+---
+
 ## ⚙️ Options principales (CLI)
 
 | Option | Défaut | Rôle |
@@ -166,9 +203,10 @@ Comportements observés : hard_braking, lane_change, overtaking,
 | 4 | Voies (UFLD / YOLOPv2) + ego-motion + comportements | ✅ |
 | 5 | Rapport de synthèse (relit le log JSONL) | ✅ |
 | 6 | **Intégration CARLA** : source simulateur + voies carte + validation vs vérité terrain | ✅ |
-| 7 | Profondeur mono (Depth Anything) + vue BEV | 🔜 |
-| 8 | Contrôle en boucle fermée (suivi de voie, virages, freinage) puis agent RL | 🔜 |
-| 9 | Multi-cam, optim GPU (TensorRT), temps réel passif embarqué (Jetson) | 🔜 |
+| 7 | **Pilote autonome en simulation** : suivi de voie (Stanley), virages, changements de voie, freinage | ✅ |
+| 8 | Agent RL : apprendre la conduite au lieu de règles écrites | 🔜 |
+| 9 | Profondeur mono (Depth Anything) + vue BEV | 🔜 |
+| 10 | Multi-cam, optim GPU (TensorRT), temps réel passif embarqué (Jetson) | 🔜 |
 
 ---
 
@@ -189,8 +227,10 @@ src/aegisdrive/
   preprocess/       conditions de scène (jour/nuit/météo)
   analytics/        rapport de fin (JSON + texte)
   viz/              annotation des frames + dashboard
+  control/          contrôleur de conduite (Stanley + ACC + virages/changements de voie)
   pipeline/         orchestrateur (mode vidéo ; temps réel plus tard)
   main.py           input.mp4 / CARLA → output.mp4 + log + rapport
+carla_drive.py      PILOTE AUTONOME en simulation (boucle fermée)
 hello_carla.py      test de connexion CARLA (caméra + vérité terrain)
 carla_eval.py       évaluation perception vs vérité terrain CARLA
 carla_calib.py      calibration distance (scénario contrôlé)
